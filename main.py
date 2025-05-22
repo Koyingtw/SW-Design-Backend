@@ -1,9 +1,13 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi.responses import Response, JSONResponse
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
 import aiohttp
 import io
+import json
+from bson import ObjectId, json_util
 
 import mistral
 import db
@@ -213,6 +217,42 @@ async def upload_diary_entry(
 
     # 根據您的需求，回應一個空的 JSON 物件
     return {}
+
+@app.get("/api/notes/{user_id}/{note_id}", tags=["筆記管理"])
+async def get_note_content(
+    user_id: str,
+    note_id: str,
+):
+    """
+    獲取指定筆記的所有內容，包含文字、音訊和影片。
+    
+    參數:
+    - user_id: 使用者 ID
+    - note_id: 筆記 ID
+    - include_binary: 是否在回應中包含音訊和影片的二進制資料
+    
+    回傳:
+    - 筆記的所有內容，按 line_id 排序
+    """
+    
+    print(f"接收到筆記內容請求: user_id={user_id}, note_id={note_id}")
+    
+    # 獲取筆記內容
+    content = await db.get_content_from_note_id(database, user_id, note_id)
+    
+    if "error" in content and content["error"]:
+        raise HTTPException(status_code=500, detail=content["message"])
+    
+    # 如果不需要包含二進制資料，則移除
+    # if not include_binary:
+    #     for item in content["items"]:
+    #         if "audio_data" in item:
+    #             del item["audio_data"]
+    #         if "video_data" in item:
+    #             del item["video_data"]
+    
+    # 使用 json_util 處理 MongoDB 特定類型
+    return JSONResponse(content=json.loads(json_util.dumps(content)))
 
 
 @app.post("/api/summary", response_model=SummaryResponse, tags=["AI 功能"])

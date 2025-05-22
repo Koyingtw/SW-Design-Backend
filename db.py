@@ -6,6 +6,7 @@ import datetime
 from bson import ObjectId
 import pymongo
 import gridfs
+import base64
 
 def connect_to_mongodb_atlas():
     DB_PASSWORD = os.getenv("DB_PASSWORD")
@@ -251,10 +252,9 @@ async def save_diary_entry(
         raise
     
         
-async def get_content_from_note_id(client, user_id: str, note_id: str) -> str:
+async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[str, any]:
     """
-    從指定的 user_id 和 note_id 的 MongoDB 資料庫中，獲取所有 type 為 'text' 的日記內容，
-    並依照 line_id 排序後拼接成一個字串。
+    從 MongoDB 中獲取指定筆記的所有內容，包括文字、音訊和影片。
     
     參數:
     - client: MongoDB 客戶端連接
@@ -262,26 +262,186 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> str:
     - note_id: 筆記 ID
     
     返回:
-    - 拼接後的完整文字內容
+    - 包含筆記所有內容的 JSON 格式資料
     """
     try:
-        # 取得資料庫和集合
+        # 獲取使用者的資料庫和筆記集合
         db = client[f"{user_id}"]
-        collection = db[f"{note_id}"]
+        note_collection = db[f"{note_id}"]
         
-        # 查詢所有 type == 'text' 的文件，並依 line_id 排序
-        # 由於 PyMongo 的 cursor 不是 async iterable，所以使用同步方式查詢
-        docs = list(collection.find({"type": "text"}).sort("line_id", 1))
+        # 查詢所有筆記項目，並按 line_id 排序
+        cursor = note_collection.find().sort("line_id", 1)
         
-        # 拼接所有 text 欄位
-        texts = []
-        for doc in docs:
+        # 將游標轉換為列表
+        items = []
+        
+        for doc in cursor:
+            # 建立基本項目資訊
+            item = {
+                "line_id": doc.get("line_id", 0),
+                "type": doc.get("type", "unknown"),
+                "created_at": doc.get("created_at", datetime.datetime.now()).isoformat(),
+                "updated_at": doc.get("updated_at", datetime.datetime.now()).isoformat()
+            }
+            
+            # 添加文字內容（如果有）
             if "text" in doc:
-                texts.append(doc["text"])
+                item["text"] = doc["text"]
+            
+            # 處理音訊檔案
+            if "audio_file_id" in doc and doc["type"] == "audio":
+                audio_file_id = doc["audio_file_id"]
+                
+                # 從 note_id.chunks 集合中獲取所有相關的 chunks
+                chunks_collection = db[f"{note_id}.chunks"]
+                chunks = list(chunks_collection.find({"files_id": ObjectId(audio_file_id)}).sort("n", 1))
+                
+                if chunks:
+                    # 拼接所有 chunks 的二進制數據
+                    audio_data = b''
+                    for chunk in chunks:
+                        try:
+                            # 檢查不同的 chunk 資料結構
+                            chunk_binary_data = None
+                            
+                            # 方法 1: 檢查是否有 data.binary.base64 結構
+                            if "data" in chunk and isinstance(chunk["data"], dict) and "binary" in chunk["data"]:
+                                if isinstance(chunk["data"]["binary"], dict) and "base64" in chunk["data"]["binary"]:
+                                    chunk_binary_data = chunk["data"]["binary"]["base64"]
+                                elif isinstance(chunk["data"]["binary"], str):
+                                    chunk_binary_data = chunk["data"]["binary"]
+                            
+                            # 方法 2: 檢查是否直接有 data 欄位包含 base64 字串
+                            elif "data" in chunk and isinstance(chunk["data"], str):
+                                chunk_binary_data = chunk["data"]
+                            
+                            # 方法 3: 檢查是否有其他可能的結構
+                            elif "data" in chunk and hasattr(chunk["data"], 'decode'):
+                                # 如果 data 是 bytes 類型，直接使用
+                                audio_data += chunk["data"]
+                                continue
+                            
+                            # 如果找到了 base64 資料，進行解碼
+                            if chunk_binary_data:
+                                # 確保是字串類型
+                                if isinstance(chunk_binary_data, bytes):
+                                    chunk_binary_data = chunk_binary_data.decode('utf-8')
+                                
+                                # 從 base64 轉換回二進制數據
+                                chunk_data = base64.b64decode(chunk_binary_data)
+                                audio_data += chunk_data
+                            else:
+                                print(f"警告：無法解析 chunk 資料結構: {chunk}")
+                                
+                        except Exception as chunk_error:
+                            print(f"處理 chunk 時發生錯誤: {chunk_error}")
+                            print(f"Chunk 內容: {chunk}")
+                            continue
+                    
+                    # 獲取檔案的元資料
+                    files_collection = db[f"{note_id}.files"]
+                    file_metadata = files_collection.find_one({"_id": ObjectId(audio_file_id)})
+                    
+                    if file_metadata:
+                        item["audio_data"] = base64.b64encode(audio_data).decode('utf-8')  # 轉換為 base64 字串以便 JSON 序列化
+                        item["audio_filename"] = file_metadata.get("filename", "audio.wav")
+                        item["audio_content_type"] = file_metadata.get("contentType", "audio/wav")
+                        item["audio_size"] = len(audio_data)
+                    else:
+                        # 如果找不到元資料，仍然返回數據但使用默認值
+                        item["audio_data"] = base64.b64encode(audio_data).decode('utf-8')
+                        item["audio_filename"] = "audio.wav"
+                        item["audio_content_type"] = "audio/wav"
+                        item["audio_size"] = len(audio_data)
+            
+            # 處理影片檔案（類似的邏輯）
+            if "video_file_id" in doc and doc["type"] == "video":
+                video_file_id = doc["video_file_id"]
+                
+                # 從 note_id.chunks 集合中獲取所有相關的 chunks
+                chunks_collection = db[f"{note_id}.chunks"]
+                chunks = list(chunks_collection.find({"files_id": ObjectId(video_file_id)}).sort("n", 1))
+                
+                if chunks:
+                    # 拼接所有 chunks 的二進制數據
+                    video_data = b''
+                    for chunk in chunks:
+                        try:
+                            # 檢查不同的 chunk 資料結構
+                            chunk_binary_data = None
+                            
+                            # 方法 1: 檢查是否有 data.binary.base64 結構
+                            if "data" in chunk and isinstance(chunk["data"], dict) and "binary" in chunk["data"]:
+                                if isinstance(chunk["data"]["binary"], dict) and "base64" in chunk["data"]["binary"]:
+                                    chunk_binary_data = chunk["data"]["binary"]["base64"]
+                                elif isinstance(chunk["data"]["binary"], str):
+                                    chunk_binary_data = chunk["data"]["binary"]
+                            
+                            # 方法 2: 檢查是否直接有 data 欄位包含 base64 字串
+                            elif "data" in chunk and isinstance(chunk["data"], str):
+                                chunk_binary_data = chunk["data"]
+                            
+                            # 方法 3: 檢查是否有其他可能的結構
+                            elif "data" in chunk and hasattr(chunk["data"], 'decode'):
+                                # 如果 data 是 bytes 類型，直接使用
+                                video_data += chunk["data"]
+                                continue
+                            
+                            # 如果找到了 base64 資料，進行解碼
+                            if chunk_binary_data:
+                                # 確保是字串類型
+                                if isinstance(chunk_binary_data, bytes):
+                                    chunk_binary_data = chunk_binary_data.decode('utf-8')
+                                
+                                # 從 base64 轉換回二進制數據
+                                chunk_data = base64.b64decode(chunk_binary_data)
+                                video_data += chunk_data
+                            else:
+                                print(f"警告：無法解析 chunk 資料結構: {chunk}")
+                                
+                        except Exception as chunk_error:
+                            print(f"處理 chunk 時發生錯誤: {chunk_error}")
+                            print(f"Chunk 內容: {chunk}")
+                            continue
+                    
+                    # 獲取檔案的元資料
+                    files_collection = db[f"{note_id}.files"]
+                    file_metadata = files_collection.find_one({"_id": ObjectId(video_file_id)})
+                    
+                    if file_metadata:
+                        item["video_data"] = base64.b64encode(video_data).decode('utf-8')  # 轉換為 base64 字串以便 JSON 序列化
+                        item["video_filename"] = file_metadata.get("filename", "video.mp4")
+                        item["video_content_type"] = file_metadata.get("contentType", "video/mp4")
+                        item["video_size"] = len(video_data)
+                    else:
+                        # 如果找不到元資料，仍然返回數據但使用默認值
+                        item["video_data"] = base64.b64encode(video_data).decode('utf-8')
+                        item["video_filename"] = "video.mp4"
+                        item["video_content_type"] = "video/mp4"
+                        item["video_size"] = len(video_data)
+            
+            # 將項目添加到列表中
+            items.append(item)
         
-        # 將所有文字內容合併成一個字串
-        full_text = "\n".join(texts)
-        return full_text
+        # 建立回應
+        response = {
+            "note_id": note_id,
+            "user_id": user_id,
+            "items": items,
+            "total_items": len(items),
+            "retrieved_at": datetime.datetime.now().isoformat()
+        }
+        
+        return response
+        
     except Exception as e:
-        print(f"取得日記內容時發生錯誤: {e}")
-        return ""
+        print(f"獲取筆記內容時發生錯誤: {e}")
+        import traceback
+        traceback.print_exc()  # 印出完整的錯誤追蹤
+        # 返回錯誤資訊
+        return {
+            "error": True,
+            "message": f"獲取筆記內容時發生錯誤: {str(e)}",
+            "note_id": note_id,
+            "user_id": user_id
+        }
