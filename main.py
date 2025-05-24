@@ -283,7 +283,6 @@ async def get_note_content(
     參數:
     - user_id: 使用者 ID
     - note_id: 筆記 ID
-    - include_binary: 是否在回應中包含音訊和影片的二進制資料
     
     回傳:
     - 筆記的所有內容，按 line_id 排序
@@ -297,17 +296,48 @@ async def get_note_content(
     if "error" in content and content["error"]:
         raise HTTPException(status_code=500, detail=content["message"])
     
-    # 如果不需要包含二進制資料，則移除
-    # if not include_binary:
-    #     for item in content["items"]:
-    #         if "audio_data" in item:
-    #             del item["audio_data"]
-    #         if "video_data" in item:
-    #             del item["video_data"]
-    
     # 使用 json_util 處理 MongoDB 特定類型
     return JSONResponse(content=json.loads(json_util.dumps(content)))
 
+@app.get("/api/notes/{user_id}/{note_id}/hashtags", response_model=list[str], tags=["獲取 hashtags"])
+async def get_note_hashtags_api(
+    user_id: str,
+    note_id: str
+):
+    """
+    獲取指定筆記的 hashtags 列表
+    
+    參數:
+    - user_id: 使用者 ID
+    - note_id: 筆記 ID
+    
+    返回:
+    - hashtags 的字串列表
+    """
+    global client  # 假設您已經設置了全域的 MongoDB 客戶端
+    
+    try:
+        # 呼叫函數獲取 hashtags
+        hashtags = await db.get_note_hashtags(database, user_id, note_id)
+        
+        # 如果找不到筆記，回傳 404 錯誤
+        if not hashtags and not await db.note_exists(database, user_id, note_id):
+            raise HTTPException(
+                status_code=404, 
+                detail=f"找不到使用者 {user_id} 的筆記 {note_id}"
+            )
+        
+        return hashtags  # 直接回傳 hashtags 列表
+        
+    except HTTPException:
+        # 重新拋出 HTTP 異常
+        raise
+    except Exception as e:
+        print(f"API 處理時發生錯誤: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"獲取標籤時發生錯誤: {str(e)}"
+        )
 
 @app.post("/api/summary", response_model=SummaryResponse, tags=["AI 功能"])
 async def get_summary(
@@ -324,6 +354,22 @@ async def get_summary(
     # return {"summary": summary_content}
     print(f"接收到摘要請求: note_id={note_id}, custom_prompt={custom_prompt}")
     return {"summary": f"{summary_content}"}
+
+@app.post("/api/get_hashtag", tags=["hashtags"])
+async def get_summary(
+    user_id: str = Form(...),
+    note_id: str = Form(...),
+    custom_prompt: Optional[str] = Form(None)
+):
+    """
+    根據筆記 ID 生成 hashtags
+    """
+    # --- 實際的摘要邏輯會在這裡 ---
+    # 例如：
+    hashtags = await mistral.generate_hashtag_from_note(database, user_id, note_id, mistral_client)
+    # return {"summary": summary_content}
+    print(f"接收到 hashtags 請求: note_id={note_id}, hashtags={hashtags}")
+    return {"hashtags": f"{hashtags}"}
 
 GPU_SERVER_URL = "http://140.114.91.158:8760/transcribe"
 

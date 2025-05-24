@@ -252,14 +252,15 @@ async def save_diary_entry(
         raise
     
 # 在指定使用者的 note_list 集合中加入新的 note_id
-async def add_note_id_to_note_list(client, user_id: str, note_id: str):
+async def add_note_id_to_note_list(client, user_id: str, note_id: str, hashtags: list[str] = None):
     """
-    在指定使用者的 note_list 集合中加入新的 note_id
+    在指定使用者的 note_list 集合中加入新的 note_id 作為獨立文檔
     
     參數:
     - client: MongoDB 客戶端連接
     - user_id: 使用者 ID
     - note_id: 要加入的筆記 ID
+    - hashtags: 標籤列表（可選）
     
     返回:
     - 操作結果
@@ -272,25 +273,31 @@ async def add_note_id_to_note_list(client, user_id: str, note_id: str):
         # 準備要插入的文檔
         note_entry = {
             "note_id": note_id,
-            "created_at": datetime.datetime.now(),
+            "hashtags": hashtags if hashtags is not None else [],
             "updated_at": datetime.datetime.now()
         }
         
-        # 使用 update_one 並使用 $addToSet 確保不重複加入
+        # 使用 update_one 並使用 upsert 確保不重複加入
         result = collection.update_one(
-            {},  # 空的查詢條件，假設只有一個文件用來存放 note_list
+            {"note_id": note_id},  # 查詢條件：根據 note_id 查找
             {
-                "$addToSet": {"note_list": note_entry},
-                "$set": {"updated_at": datetime.datetime.now()}
+                "$set": note_entry,
+                "$setOnInsert": {"created_at": datetime.datetime.now()}  # 只在插入時設定 created_at
             },
             upsert=True  # 如果文件不存在則創建
         )
         
-        print(f"成功更新 note_list，note_id: {note_id}")
+        if result.upserted_id:
+            print(f"成功新增 note_id: {note_id} 到 note_list")
+        else:
+            print(f"成功更新 note_id: {note_id} 的資料")
+            
         return {
             "success": True,
+            "note_id": note_id,
             "modified_count": result.modified_count,
-            "upserted_id": result.upserted_id
+            "upserted_id": result.upserted_id,
+            "is_new": result.upserted_id is not None
         }
         
     except Exception as e:
@@ -299,7 +306,7 @@ async def add_note_id_to_note_list(client, user_id: str, note_id: str):
             "success": False,
             "error": str(e)
         }
-    
+
 async def get_sorted_note_list(client, user_id: str) -> list[str]:
     """
     從指定使用者的 note_list 集合中獲取所有 note_id，並按順序排序後回傳
@@ -316,27 +323,11 @@ async def get_sorted_note_list(client, user_id: str) -> list[str]:
         db = client[user_id]
         collection = db['note_list']
         
-        # 查詢 note_list 文檔
-        doc = collection.find_one({})
+        # 查詢所有文檔，只取得 note_id 欄位
+        cursor = collection.find({}, {"note_id": 1, "_id": 0}).sort("note_id", 1)
         
-        if not doc or 'note_list' not in doc:
-            print(f"使用者 {user_id} 的 note_list 為空或不存在")
-            return []
-        
-        note_list = doc['note_list']
-        note_ids = []
-        
-        # 處理不同的資料格式
-        for item in note_list:
-            if isinstance(item, str):
-                # 如果是字串，直接加入
-                note_ids.append(item)
-            elif isinstance(item, dict) and 'note_id' in item:
-                # 如果是包含 note_id 的字典，提取 note_id
-                note_ids.append(item['note_id'])
-        
-        # 排序 note_ids（按字母順序，您可以根據需要調整排序邏輯）
-        note_ids.sort()
+        # 提取所有 note_id
+        note_ids = [doc["note_id"] for doc in cursor]
         
         print(f"成功獲取使用者 {user_id} 的 {len(note_ids)} 個筆記")
         return note_ids
@@ -535,6 +526,125 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
         return {
             "error": True,
             "message": f"獲取筆記內容時發生錯誤: {str(e)}",
+            "note_id": note_id,
+            "user_id": user_id
+        }
+
+async def note_exists(client, user_id: str, note_id: str) -> bool:
+    """
+    檢查指定的筆記是否存在於 note_list 中
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    - note_id: 筆記 ID
+    
+    返回:
+    - 如果筆記存在返回 True，否則返回 False
+    """
+    try:
+        db = client[user_id]
+        collection = db['note_list']
+        
+        # 只檢查文檔是否存在，不需要獲取內容
+        doc = collection.find_one({"note_id": note_id}, {"_id": 1})
+        
+        return doc is not None
+        
+    except Exception as e:
+        print(f"檢查筆記存在性時發生錯誤: {e}")
+        return False
+
+async def get_note_hashtags(client, user_id: str, note_id: str) -> list[str]:
+    """
+    從指定使用者的 note_list 集合中獲取特定筆記的 hashtags
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    - note_id: 筆記 ID
+    
+    返回:
+    - hashtags 列表，如果找不到筆記則返回空列表
+    """
+    try:
+        # 獲取使用者的資料庫
+        db = client[user_id]
+        collection = db['note_list']
+        
+        # 查詢指定 note_id 的文檔，只取得 hashtags 欄位
+        doc = collection.find_one(
+            {"note_id": note_id},
+            {"hashtags": 1, "_id": 0}  # 只返回 hashtags 欄位，不返回 _id
+        )
+        
+        if doc is None:
+            print(f"找不到 note_id: {note_id} 在使用者 {user_id} 的 note_list 中")
+            return []
+        
+        # 獲取 hashtags，如果不存在則返回空列表
+        hashtags = doc.get("hashtags", [])
+        
+        print(f"成功獲取 note_id: {note_id} 的標籤: {hashtags}")
+        return hashtags
+        
+    except Exception as e:
+        print(f"獲取筆記標籤時發生錯誤: {e}")
+        return []
+
+async def update_note_hashtags(client, user_id: str, note_id: str, hashtags: list[str]):
+    """
+    更新指定筆記的 hashtags
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    - note_id: 筆記 ID
+    - hashtags: 新的標籤列表
+    
+    返回:
+    - 操作結果字典
+    """
+    try:
+        # 獲取使用者的資料庫
+        db = client[user_id]
+        collection = db['note_list']
+        
+        # 更新指定 note_id 的 hashtags
+        result = collection.update_one(
+            {"note_id": note_id},
+            {
+                "$set": {
+                    "hashtags": hashtags,
+                    "updated_at": datetime.datetime.now()
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            print(f"找不到 note_id: {note_id} 在使用者 {user_id} 的 note_list 中")
+            return {
+                "success": False, 
+                "error": "Note not found",
+                "note_id": note_id,
+                "user_id": user_id
+            }
+        
+        print(f"成功更新 note_id: {note_id} 的標籤為: {hashtags}")
+        return {
+            "success": True,
+            "note_id": note_id,
+            "user_id": user_id,
+            "hashtags": hashtags,
+            "modified_count": result.modified_count,
+            "updated_at": datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"更新標籤時發生錯誤: {e}")
+        return {
+            "success": False,
+            "error": str(e),
             "note_id": note_id,
             "user_id": user_id
         }
