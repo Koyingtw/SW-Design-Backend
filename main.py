@@ -155,6 +155,7 @@ async def upload_diary_entry(
     type: str = Form(...),
     text: Optional[str] = Form(None),
     audio: Optional[UploadFile] = File(None), # 可選的 .wav 檔案
+    image: Optional[UploadFile] = File(None), # 可選的 .jpg 檔案
     video: Optional[UploadFile] = File(None)  # 可選的 .mp4 檔案
 ):
     """
@@ -165,6 +166,7 @@ async def upload_diary_entry(
     - **type**: 內容類型 (例如 "text", "audio_text")。
     - **text**: 相關的文字內容。
     - **audio**: (可選) .wav 格式的音訊檔案。
+    - **image**: (可選) .jpg 格式的圖片檔案
     - **video**: (可選) .mp4 格式的影片檔案。
     """
     # 這裡可以加入處理接收到的資料和檔案的邏輯
@@ -190,9 +192,14 @@ async def upload_diary_entry(
         # 模擬處理音訊檔案
         audio_content = await audio.read()
         print(f"  接收到音訊檔案: {audio.filename}, 大小: {len(audio_content)} bytes, 內容類型: {audio.content_type}")
-        # 實際應用中您可能會將檔案儲存到某處:
-        # with open(f"uploads/audios/{audio.filename}", "wb") as f:
-        #     f.write(audio_content)
+        
+    if image:
+        # 檢查檔案類型 (範例)
+        if not image.filename.endswith(".jpg"):
+            raise HTTPException(status_code=400, detail="音訊檔案必須是 .jpg 格式。")
+        # 模擬處理音訊檔案
+        image_content = await image.read()
+        print(f"  接收到音訊檔案: {image.filename}, 大小: {len(image_content)} bytes, 內容類型: {image.content_type}")
 
     if video:
         # 檢查檔案類型 (範例)
@@ -201,22 +208,8 @@ async def upload_diary_entry(
         # 模擬處理影片檔案
         video_content = await video.read()
         print(f"  接收到影片檔案: {video.filename}, 大小: {len(video_content)} bytes, 內容類型: {video.content_type}")
-        # 實際應用中您可能會將檔案儲存到某處:
-        # with open(f"uploads/videos/{video.filename}", "wb") as f:
-        #     f.write(video_content)
-        
-    # result = await upload_diary_entry_handler(
-    #     database,
-    #     user_id,
-    #     note_id,
-    #     line_id,
-    #     type,
-    #     text,
-    #     audio,
-    #     video
-    # )
     
-    result = await db.save_diary_entry(
+    await db.save_diary_entry(
             database,
             user_id,
             note_id,
@@ -225,6 +218,8 @@ async def upload_diary_entry(
             text,
             audio,
             audio_content,
+            image,
+            image_content,
             video,
             video_content
         )
@@ -359,7 +354,6 @@ async def get_summary(
 async def get_summary(
     user_id: str = Form(...),
     note_id: str = Form(...),
-    custom_prompt: Optional[str] = Form(None)
 ):
     """
     根據筆記 ID 生成 hashtags

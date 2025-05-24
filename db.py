@@ -37,7 +37,6 @@ def get_db_and_collection(client, user_id: str, note_id: str):
     
     return db, collection
 
-
 def clear_diary_collection(client, user_id, note_id):
     """
     清除指定用戶的日記集合中的所有資料。
@@ -77,7 +76,6 @@ async def save_audio_to_mongodb(
         db, _ = get_db_and_collection(client, user_id, note_id)
         
         # 使用 GridFS 存儲音訊檔案
-        # fs = pymongo.gridfs.GridFS(db, collection="audio_files")
         fs = gridfs.GridFS(db, collection=note_id)
         
         # 準備檔案元資料
@@ -108,6 +106,54 @@ async def save_audio_to_mongodb(
     except Exception as e:
         print(f"存儲音訊檔案到 MongoDB 時發生錯誤: {e}")
         raise
+
+async def save_image_to_mongodb(
+    client, 
+    user_id: str, 
+    note_id: str, 
+    line_id: int, 
+    image_file,
+    image_content: bytes
+):
+    """
+    將上傳的圖片檔案存儲到 MongoDB 中，使用 GridFS。
+    """
+    try:
+        # 獲取使用者的資料庫
+        db, _ = get_db_and_collection(client, user_id, note_id)
+        
+        # 使用 GridFS 存儲音訊檔案
+        fs = gridfs.GridFS(db, collection=note_id)
+        
+        # 準備檔案元資料
+        metadata = {
+            "user_id": user_id,
+            "note_id": note_id,
+            "line_id": line_id,
+            "filename": image_file.filename,
+            "content_type": image_file.content_type,
+            "upload_date": datetime.datetime.now(),
+            "file_size": len(image_content)
+        }
+        
+        # 將檔案內容轉換為 BytesIO 物件
+        file_data = io.BytesIO(image_content)
+        
+        # 將檔案存儲到 GridFS
+        file_id = fs.put(
+            file_data, 
+            filename=image_file.filename,
+            content_type=image_file.content_type,
+            metadata=metadata
+        )
+        
+        print(f"音訊檔案已成功存儲到 MongoDB，檔案 ID: {file_id}")
+        return str(file_id)
+        
+    except Exception as e:
+        print(f"存儲音訊檔案到 MongoDB 時發生錯誤: {e}")
+        raise
+
 
 # 儲存影片檔案到 MongoDB
 async def save_video_to_mongodb(
@@ -167,6 +213,8 @@ async def save_diary_entry(
     text: str = None,
     audio_file = None,
     audio_content = None,
+    image_file = None,
+    image_content = None,
     video_file = None,
     video_content = None
 ):
@@ -215,6 +263,18 @@ async def save_diary_entry(
                 audio_content
             )
             note_item["audio_file_id"] = audio_file_id
+        
+        # 處理圖片檔案
+        if image_file and image_content:
+            image_file_id = await save_image_to_mongodb(
+                client, 
+                user_id, 
+                note_id, 
+                line_id, 
+                image_file, 
+                image_content
+            )
+            note_item["image_file_id"] = image_file_id
         
         # 處理影片檔案
         if video_file and video_content:
@@ -437,6 +497,70 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
                         item["audio_filename"] = "audio.wav"
                         item["audio_content_type"] = "audio/wav"
                         item["audio_size"] = len(audio_data)
+            
+            # 處理圖片檔案（類似的邏輯）
+            if "image_file_id" in doc and doc["type"] == "image":
+                image_file_id = doc["image_file_id"]
+                
+                # 從 note_id.chunks 集合中獲取所有相關的 chunks
+                chunks_collection = db[f"{note_id}.chunks"]
+                chunks = list(chunks_collection.find({"files_id": ObjectId(image_file_id)}).sort("n", 1))
+                
+                if chunks:
+                    # 拼接所有 chunks 的二進制數據
+                    image_data = b''
+                    for chunk in chunks:
+                        try:
+                            # 檢查不同的 chunk 資料結構
+                            chunk_binary_data = None
+                            
+                            # 方法 1: 檢查是否有 data.binary.base64 結構
+                            if "data" in chunk and isinstance(chunk["data"], dict) and "binary" in chunk["data"]:
+                                if isinstance(chunk["data"]["binary"], dict) and "base64" in chunk["data"]["binary"]:
+                                    chunk_binary_data = chunk["data"]["binary"]["base64"]
+                                elif isinstance(chunk["data"]["binary"], str):
+                                    chunk_binary_data = chunk["data"]["binary"]
+                            
+                            # 方法 2: 檢查是否直接有 data 欄位包含 base64 字串
+                            elif "data" in chunk and isinstance(chunk["data"], str):
+                                chunk_binary_data = chunk["data"]
+                            
+                            # 方法 3: 檢查是否有其他可能的結構
+                            elif "data" in chunk and hasattr(chunk["data"], 'decode'):
+                                # 如果 data 是 bytes 類型，直接使用
+                                image_data += chunk["data"]
+                                continue
+                            
+                            # 如果找到了 base64 資料，進行解碼
+                            if chunk_binary_data:
+                                # 確保是字串類型
+                                if isinstance(chunk_binary_data, bytes):
+                                    chunk_binary_data = chunk_binary_data.decode('utf-8')
+                                
+                                # 從 base64 轉換回二進制數據
+                                chunk_data = base64.b64decode(chunk_binary_data)
+                                image_data += chunk_data
+                            else:
+                                print(f"警告：無法解析 chunk 資料結構: {chunk}")
+                                
+                        except Exception as chunk_error:
+                            print(f"處理 chunk 時發生錯誤: {chunk_error}")
+                            print(f"Chunk 內容: {chunk}")
+                            continue
+                    # 獲取檔案的元資料
+                    files_collection = db[f"{note_id}.files"]
+                    file_metadata = files_collection.find_one({"_id": ObjectId(image_file_id)})
+                    if file_metadata:
+                        item["image_data"] = base64.b64encode(image_data).decode('utf-8')
+                        item["image_filename"] = file_metadata.get("filename", "image.jpg")
+                        item["image_content_type"] = file_metadata.get("contentType", "image/jpeg")
+                        item["image_size"] = len(image_data)
+                    else:
+                        # 如果找不到元資料，仍然返回數據但使用默認值
+                        item["image_data"] = base64.b64encode(image_data).decode('utf-8')
+                        item["image_filename"] = "image.jpg"
+                        item["image_content_type"] = "image/jpeg"
+                        item["image_size"] = len(image_data)
             
             # 處理影片檔案（類似的邏輯）
             if "video_file_id" in doc and doc["type"] == "video":
@@ -672,6 +796,7 @@ async def fuzzy_search(client, user_id: str, note_ids: list[str], query: str) ->
         # 遍歷每個 note_id
         for note_id in note_ids:
             collection = db[note_id]
+            print(note_id)
             
             # 使用 $regex 進行模糊搜尋，忽略大小寫
             cursor = collection.find({
@@ -695,3 +820,4 @@ async def fuzzy_search(client, user_id: str, note_ids: list[str], query: str) ->
     except Exception as e:
         print(f"模糊搜尋時發生錯誤: {e}")
         return {}
+
