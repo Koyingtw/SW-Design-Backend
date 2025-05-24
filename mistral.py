@@ -58,6 +58,7 @@ async def generate_hashtag_from_note(client, user_id: str, note_id: str, mistral
     corrected_text = response.choices[0].message.content
     print(f"corrected_text: {corrected_text}")
     corrected_list = corrected_text.split(',')
+    await db.update_note_hashtags(client, user_id, note_id, corrected_list)  # 假設這是一個函數，用來更新日記的 hashtags
     
     return f"{corrected_list}"
 
