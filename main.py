@@ -33,6 +33,13 @@ class SummaryRequest(BaseModel):
 # AI 統整回應
 class SummaryResponse(BaseModel):
     summary: str
+    
+# Node list 回應    
+class NoteListResponse(BaseModel):
+    user_id: str
+    note_ids: List[str]
+    total_notes: int
+    retrieved_at: str
 
 # 模糊搜尋結果中的單個筆記項目
 class SearchResultItem(BaseModel):
@@ -218,7 +225,47 @@ async def upload_diary_entry(
     # 根據您的需求，回應一個空的 JSON 物件
     return {}
 
-@app.get("/api/notes/{user_id}/{note_id}", tags=["筆記管理"])
+@app.post("/api/create", status_code=200, tags=["新增日記"])
+async def create_diary(
+    user_id: str = Form(...),
+    note_id: str = Form(...),
+):
+    """
+    創建一個新的日記條目。
+    
+    - **user_id**: 使用者的唯一識別碼。
+    - **note_id**: 筆記的唯一識別碼。
+    """
+    print(f"接收到創建日記請求: user_id={user_id}, note_id={note_id}")
+    
+    # 清除舊的日記條目
+    await db.add_note_id_to_note_list(database, user_id, note_id)
+    
+    # 返回成功回應
+    return JSONResponse(content={"message": "日記創建成功"})
+
+@app.get("/api/note_list/{user_id}", tags=["獲得筆記列表"])
+async def get_user_note_list_simple(user_id: str):
+    """
+    獲取使用者的筆記 ID 列表（簡化版本，直接回傳陣列）
+    
+    參數:
+    - user_id: 使用者 ID
+    
+    返回:
+    - note_id 的 JSON 陣列
+    """
+    global client
+    
+    try:
+        note_ids = await db.get_sorted_note_list(database, user_id)
+        return note_ids  # 直接回傳陣列
+        
+    except Exception as e:
+        print(f"API 處理時發生錯誤: {e}")
+        raise HTTPException(status_code=500, detail=f"獲取筆記列表時發生錯誤: {str(e)}")
+
+@app.get("/api/notes/{user_id}/{note_id}", tags=["獲取筆記內容"])
 async def get_note_content(
     user_id: str,
     note_id: str,

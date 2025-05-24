@@ -251,6 +251,98 @@ async def save_diary_entry(
         print(f"儲存日記條目到 MongoDB 時發生錯誤: {e}")
         raise
     
+async def add_note_id_to_note_list(client, user_id: str, note_id: str):
+    """
+    在指定使用者的 note_list 集合中加入新的 note_id
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    - note_id: 要加入的筆記 ID
+    
+    返回:
+    - 操作結果
+    """
+    try:
+        # 獲取使用者的資料庫
+        db = client[user_id]
+        collection = db['note_list']
+        
+        # 準備要插入的文檔
+        note_entry = {
+            "note_id": note_id,
+            "created_at": datetime.datetime.now(),
+            "updated_at": datetime.datetime.now()
+        }
+        
+        # 使用 update_one 並使用 $addToSet 確保不重複加入
+        result = collection.update_one(
+            {},  # 空的查詢條件，假設只有一個文件用來存放 note_list
+            {
+                "$addToSet": {"note_list": note_entry},
+                "$set": {"updated_at": datetime.datetime.now()}
+            },
+            upsert=True  # 如果文件不存在則創建
+        )
+        
+        print(f"成功更新 note_list，note_id: {note_id}")
+        return {
+            "success": True,
+            "modified_count": result.modified_count,
+            "upserted_id": result.upserted_id
+        }
+        
+    except Exception as e:
+        print(f"更新 note_list 時發生錯誤: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    
+async def get_sorted_note_list(client, user_id: str) -> list[str]:
+    """
+    從指定使用者的 note_list 集合中獲取所有 note_id，並按順序排序後回傳
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    
+    返回:
+    - 排序後的 note_id 列表
+    """
+    try:
+        # 獲取使用者的資料庫
+        db = client[user_id]
+        collection = db['note_list']
+        
+        # 查詢 note_list 文檔
+        doc = collection.find_one({})
+        
+        if not doc or 'note_list' not in doc:
+            print(f"使用者 {user_id} 的 note_list 為空或不存在")
+            return []
+        
+        note_list = doc['note_list']
+        note_ids = []
+        
+        # 處理不同的資料格式
+        for item in note_list:
+            if isinstance(item, str):
+                # 如果是字串，直接加入
+                note_ids.append(item)
+            elif isinstance(item, dict) and 'note_id' in item:
+                # 如果是包含 note_id 的字典，提取 note_id
+                note_ids.append(item['note_id'])
+        
+        # 排序 note_ids（按字母順序，您可以根據需要調整排序邏輯）
+        note_ids.sort()
+        
+        print(f"成功獲取使用者 {user_id} 的 {len(note_ids)} 個筆記")
+        return note_ids
+        
+    except Exception as e:
+        print(f"獲取 note_list 時發生錯誤: {e}")
+        return []
         
 async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[str, any]:
     """
