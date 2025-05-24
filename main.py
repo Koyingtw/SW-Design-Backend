@@ -355,7 +355,7 @@ async def get_summary(
     print(f"接收到摘要請求: note_id={note_id}, custom_prompt={custom_prompt}")
     return {"summary": f"{summary_content}"}
 
-@app.post("/api/get_hashtag", tags=["hashtags"])
+@app.post("/api/gen_hashtag", tags=["生成 hashtags"])
 async def get_summary(
     user_id: str = Form(...),
     note_id: str = Form(...),
