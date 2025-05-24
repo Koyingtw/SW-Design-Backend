@@ -8,6 +8,7 @@ import aiohttp
 import io
 import json
 from bson import ObjectId, json_util
+import datetime
 
 import mistral
 import db
@@ -49,7 +50,13 @@ class SearchResultItem(BaseModel):
 
 # 模糊搜尋回應
 class SearchResponse(BaseModel):
-    results: List[SearchResultItem]
+    query: str
+    user_id: str
+    notes: Dict[str, List[str]]
+    total_matches: int
+    searched_notes: int
+    search_time: str
+
 
 # 標籤建議請求體
 class TagSuggestRequest(BaseModel):
@@ -387,22 +394,38 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
             detail=f"處理請求時發生錯誤: {str(e)}"
         )
 
-@app.get("/api/search", response_model=SearchResponse, tags=["搜尋功能"])
-async def search_notes(query: str):
+@app.get("/api/search/{user_id}", response_model=SearchResponse, tags=["搜尋功能"])
+async def search_notes(user_id: str, query: str):
     """
     根據提供的查詢字串進行模糊搜尋。
     """
-    # --- 實際的模糊搜尋邏輯會在這裡 ---
-    # 例如：
-    # search_results = await perform_fuzzy_search(query)
-    # return {"results": search_results}
-    print(f"接收到搜尋請求: query={query}")
-    # 模擬搜尋結果
-    mock_results = [
-        SearchResultItem(note_id="note123", title="關於 FastAPI 的筆記", summary=f"這是與 '{query}' 相關的 FastAPI 筆記摘要..."),
-        SearchResultItem(note_id="note456", title="Python 學習心得", summary=f"這是與 '{query}' 相關的 Python 學習摘要..."),
-    ]
-    return {"results": mock_results}
+    try:
+        # 先取得使用者的所有 note_id
+        note_ids = await db.get_sorted_note_list(database, user_id)
+        
+        if not note_ids:
+            raise HTTPException(status_code=404, detail=f"使用者 {user_id} 沒有任何筆記")
+        
+        # 進行模糊搜尋
+        
+        search_result = await db.fuzzy_search(database, user_id, note_ids, query)
+        
+        # 計算總匹配數
+        total_matches = sum(len(texts) for texts in search_result.values())
+        
+        return SearchResponse(
+            query=query,
+            user_id=user_id,
+            notes=search_result,
+            total_matches=total_matches,
+            searched_notes=len(note_ids),
+            search_time=datetime.datetime.now().isoformat()
+        )
+    
+    except Exception as e:
+        print(f"搜尋 API 處理時發生錯誤: {e}")
+        raise HTTPException(status_code=500, detail=f"搜尋時發生錯誤: {str(e)}")
+
 
 @app.post("/api/tag/suggest", response_model=TagSuggestResponse, tags=["標籤功能"])
 async def suggest_tags(payload: TagSuggestRequest):

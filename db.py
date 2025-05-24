@@ -251,6 +251,7 @@ async def save_diary_entry(
         print(f"儲存日記條目到 MongoDB 時發生錯誤: {e}")
         raise
     
+# 在指定使用者的 note_list 集合中加入新的 note_id
 async def add_note_id_to_note_list(client, user_id: str, note_id: str):
     """
     在指定使用者的 note_list 集合中加入新的 note_id
@@ -537,3 +538,50 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
             "note_id": note_id,
             "user_id": user_id
         }
+
+async def fuzzy_search(client, user_id: str, note_ids: list[str], query: str) -> dict[str, list[str]]:
+    """
+    在 user_id 資料庫中，對所有 note_id 的集合進行模糊搜尋，找出 text 欄位包含 query 的文件，
+    並以字典形式回傳，key 為 note_id，value 為符合條件的 text 列表。
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    - note_ids: 要搜尋的筆記 ID 列表
+    - query: 搜尋關鍵字
+    
+    返回:
+    - 字典，key 為 note_id，value 為包含關鍵字的 text 列表
+    """
+    result = {}
+    
+    try:
+        # 獲取使用者的資料庫
+        db = client[user_id]
+        
+        # 遍歷每個 note_id
+        for note_id in note_ids:
+            collection = db[note_id]
+            
+            # 使用 $regex 進行模糊搜尋，忽略大小寫
+            cursor = collection.find({
+                "text": {"$regex": query, "$options": "i"},
+                "type": "text"  # 只搜尋 type 為 text 的文件
+            })
+            
+            # 提取符合條件的 text 內容
+            texts = []
+            for doc in cursor:
+                if "text" in doc:
+                    texts.append(doc["text"])
+            
+            # 如果找到符合條件的文字，加入結果
+            if texts:
+                result[note_id] = texts
+        
+        print(f"搜尋完成，在 {len(result)} 個筆記中找到包含 '{query}' 的內容")
+        return result
+        
+    except Exception as e:
+        print(f"模糊搜尋時發生錯誤: {e}")
+        return {}
