@@ -14,7 +14,8 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
     note_content_all = await db.get_content_from_note_id(client, user_id, note_id)  # 假設這是一個函數，用來根據 note_id 獲取日記內容
     note_content = ""
     for content in note_content_all['items']:
-        note_content += content['text']
+        if content['type'] == 'text':
+            note_content += content['text']
     print(f"日記內容：{note_content}")
     # return note_content
     user_input += f"日記內容：\n{note_content}"
@@ -34,14 +35,15 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
 
 async def generate_hashtag_from_note(client, user_id: str, note_id: str, mistral_client) -> str:
     user_input = """
-    請總結以下的日記內容，並生成出幾個 hashtag，以一個字串：hashtag1,hashtag2 的格式（以逗點作為分割）呈現，不要輸出多餘的符號，也不要輸出原文，只要 hashtag 就好：
+    請總結以下的日記內容，並生成出幾個 hashtag，像是當天發生了什麼事件、當天心情如何、出現了什麼人物、考了什麼試等等，並以一個字串：hashtag1,hashtag2 的格式（以逗點作為分割）呈現，不要輸出多餘的符號，也不要輸出原文，只要 hashtag 就好：
     """
     # 這裡可以使用 Mistral API 來生成摘要
     
     note_content_all = await db.get_content_from_note_id(client, user_id, note_id)  # 假設這是一個函數，用來根據 note_id 獲取日記內容
     note_content = ""
     for content in note_content_all['items']:
-        note_content += content['text']
+        if content['type'] == 'text':
+            note_content += content['text']
     print(f"日記內容：{note_content}")
     # return note_content
     user_input += f"日記內容：\n{note_content}"
