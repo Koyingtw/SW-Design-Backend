@@ -9,14 +9,17 @@ import io
 import json
 from bson import ObjectId, json_util
 import datetime
+from openai import OpenAI
 
 import mistral
 import db
 
 mistral_key = os.getenv("MISTRAL_API_KEY")
+openai_api_key = os.environ.get('OPENAI_API_KEY')
 db_password = os.getenv("DB_PASSWORD")
 database = db.connect_to_mongodb_atlas()
 mistral_client = mistral.Mistral(api_key=mistral_key)
+openai_client = OpenAI(api_key=openai_api_key)
 
 app = FastAPI(
     title="我的筆記 API",
@@ -183,6 +186,7 @@ async def upload_diary_entry(
         db.clear_diary_collection(database, user_id, note_id)
 
     audio_content = None
+    image_content = None
     video_content = None
     
     if audio:
@@ -345,7 +349,7 @@ async def get_summary(
     """
     # --- 實際的摘要邏輯會在這裡 ---
     # 例如：
-    summary_content = await mistral.generate_summary_from_note(database, user_id, note_id, custom_prompt, mistral_client)
+    summary_content = await mistral.generate_summary_from_note(database, user_id, note_id, custom_prompt, openai_client)
     # return {"summary": summary_content}
     print(f"接收到摘要請求: note_id={note_id}, custom_prompt={custom_prompt}")
     return {"summary": f"{summary_content}"}
@@ -360,23 +364,97 @@ async def get_summary(
     """
     # --- 實際的摘要邏輯會在這裡 ---
     # 例如：
-    hashtags = await mistral.generate_hashtag_from_note(database, user_id, note_id, mistral_client)
+    hashtags = await mistral.generate_hashtag_from_note(database, user_id, note_id, openai_client)
     # return {"summary": summary_content}
     print(f"接收到 hashtags 請求: note_id={note_id}, hashtags={hashtags}")
     return {"hashtags": f"{hashtags}"}
 
-GPU_SERVER_URL = "http://140.114.91.158:8760/transcribe"
+# GPU_SERVER_URL = "http://140.114.91.158:8760/transcribe"
+
+# @app.post("/api/audio/transcribe", response_model=TranscribeResponse, tags=["語音服務"])
+# async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh")):
+#     """
+#     接收 .wav 音檔並將其轉換為文字。
+    
+#     - **audio**: 要轉錄的音訊檔案 (.wav 格式)
+#     - **language**: 音訊的語言代碼 (預設為中文 'zh')
+#     """
+#     if not audio.filename.endswith((".wav", ".mp3", ".m4a")):
+#         raise HTTPException(status_code=400, detail="僅支援 .wav、.mp3 或 .m4a 格式的音檔。")
+
+#     try:
+#         print(f"接收到音檔: {audio.filename}, 內容類型: {audio.content_type}, 語言: {language}")
+        
+#         # 讀取上傳的音訊檔案內容
+#         content = await audio.read()
+        
+#         # 準備要發送到 GPU Server 的檔案和表單資料
+#         form_data = aiohttp.FormData()
+#         form_data.add_field('file', 
+#                            io.BytesIO(content),
+#                            filename=audio.filename,
+#                            content_type=audio.content_type)
+#         form_data.add_field('language', language)
+        
+#         # 發送請求到 GPU Server
+#         async with aiohttp.ClientSession() as session:
+#             async with session.post(GPU_SERVER_URL, data=form_data) as response:
+#                 if response.status != 200:
+#                     error_text = await response.text()
+#                     print(f"GPU Server 回應錯誤: {response.status}, {error_text}")
+#                     raise HTTPException(
+#                         status_code=500, 
+#                         detail=f"語音轉文字服務發生錯誤: {error_text}"
+#                     )
+                
+#                 # 解析 GPU Server 的回應
+#                 result = await response.json()
+                
+#                 if "error" in result:
+#                     raise HTTPException(
+#                         status_code=500, 
+#                         detail=f"語音轉文字處理失敗: {result['error']}"
+#                     )
+                
+#                 if "text" not in result:
+#                     raise HTTPException(
+#                         status_code=500, 
+#                         detail="語音轉文字服務回應格式不正確"
+#                     )
+                
+#                 print(f"成功獲取轉錄結果: {result['text'][:50]}...")
+#                 return {"text": result["text"]}
+                
+#     except aiohttp.ClientError as e:
+#         print(f"連接 GPU Server 時發生錯誤: {str(e)}")
+#         raise HTTPException(
+#             status_code=503, 
+#             detail=f"無法連接到語音轉文字服務: {str(e)}"
+#         )
+#     except Exception as e:
+#         print(f"處理音訊轉文字時發生未預期的錯誤: {str(e)}")
+#         raise HTTPException(
+#             status_code=500, 
+#             detail=f"處理請求時發生錯誤: {str(e)}"
+#         )
 
 @app.post("/api/audio/transcribe", response_model=TranscribeResponse, tags=["語音服務"])
 async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh")):
     """
-    接收 .wav 音檔並將其轉換為文字。
+    接收音檔並使用 OpenAI Whisper API 將其轉換為文字。
     
-    - **audio**: 要轉錄的音訊檔案 (.wav 格式)
+    - **audio**: 要轉錄的音訊檔案 (支援多種格式：mp3, mp4, mpeg, mpga, m4a, wav, webm)
     - **language**: 音訊的語言代碼 (預設為中文 'zh')
     """
-    if not audio.filename.endswith((".wav", ".mp3", ".m4a")):
-        raise HTTPException(status_code=400, detail="僅支援 .wav、.mp3 或 .m4a 格式的音檔。")
+    
+    # OpenAI Whisper 支援的檔案格式
+    supported_formats = (".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm")
+    
+    if not audio.filename.lower().endswith(supported_formats):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"僅支援以下格式的音檔: {', '.join(supported_formats)}"
+        )
 
     try:
         print(f"接收到音檔: {audio.filename}, 內容類型: {audio.content_type}, 語言: {language}")
@@ -384,55 +462,70 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
         # 讀取上傳的音訊檔案內容
         content = await audio.read()
         
-        # 準備要發送到 GPU Server 的檔案和表單資料
-        form_data = aiohttp.FormData()
-        form_data.add_field('file', 
-                           io.BytesIO(content),
-                           filename=audio.filename,
-                           content_type=audio.content_type)
-        form_data.add_field('language', language)
+        # 檢查檔案大小 (OpenAI 限制 25MB)
+        if len(content) > 25 * 1024 * 1024:  # 25MB
+            raise HTTPException(
+                status_code=400,
+                detail="音檔大小不能超過 25MB"
+            )
         
-        # 發送請求到 GPU Server
-        async with aiohttp.ClientSession() as session:
-            async with session.post(GPU_SERVER_URL, data=form_data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    print(f"GPU Server 回應錯誤: {response.status}, {error_text}")
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"語音轉文字服務發生錯誤: {error_text}"
-                    )
-                
-                # 解析 GPU Server 的回應
-                result = await response.json()
-                
-                if "error" in result:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"語音轉文字處理失敗: {result['error']}"
-                    )
-                
-                if "text" not in result:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail="語音轉文字服務回應格式不正確"
-                    )
-                
-                print(f"成功獲取轉錄結果: {result['text'][:50]}...")
-                return {"text": result["text"]}
-                
-    except aiohttp.ClientError as e:
-        print(f"連接 GPU Server 時發生錯誤: {str(e)}")
-        raise HTTPException(
-            status_code=503, 
-            detail=f"無法連接到語音轉文字服務: {str(e)}"
+        print(f"音檔大小: {len(content)} bytes")
+        
+        # 使用 OpenAI Whisper API 進行轉錄
+        audio_file = io.BytesIO(content)
+        audio_file.name = audio.filename  # 設定檔名，OpenAI 需要這個來判斷格式
+        
+        # 語言代碼轉換 (如果需要)
+        language_mapping = {
+            "zh": "zh",
+            "en": "en",
+            "ja": "ja",
+            "ko": "ko",
+            # 可以根據需要添加更多語言映射
+        }
+        
+        whisper_language = language_mapping.get(language, language)
+        
+        # 呼叫 OpenAI Whisper API
+        response = openai_client.audio.transcriptions.create(
+            model="gpt-4o-transcribe",
+            file=audio_file,
+            language=whisper_language,  # 指定語言可以提高準確性
+            response_format="text",     # 直接返回文字，也可以選擇 "json", "srt", "verbose_json", "vtt"
+            temperature=0.2,            # 降低溫度以獲得更一致的結果
         )
+        
+        # OpenAI 直接返回文字內容
+        transcribed_text = response.strip() if isinstance(response, str) else response
+        
+        print(f"成功獲取轉錄結果: {transcribed_text[:50]}...")
+        
+        return {"text": transcribed_text}
+        
     except Exception as e:
-        print(f"處理音訊轉文字時發生未預期的錯誤: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"處理請求時發生錯誤: {str(e)}"
-        )
+        print(f"使用 OpenAI 轉錄音訊時發生錯誤: {str(e)}")
+        
+        # 根據不同的錯誤類型提供更具體的錯誤訊息
+        if "rate limit" in str(e).lower():
+            raise HTTPException(
+                status_code=429,
+                detail="API 請求頻率超過限制，請稍後再試"
+            )
+        elif "invalid file format" in str(e).lower():
+            raise HTTPException(
+                status_code=400,
+                detail="不支援的音檔格式"
+            )
+        elif "file too large" in str(e).lower():
+            raise HTTPException(
+                status_code=400,
+                detail="音檔檔案過大，請壓縮後再上傳"
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"語音轉文字處理失敗: {str(e)}"
+            )
 
 @app.get("/api/search/{user_id}", response_model=SearchResponse, tags=["搜尋功能"])
 async def search_notes(user_id: str, query: str):
@@ -479,56 +572,15 @@ async def suggest_tags(payload: TagSuggestRequest):
     print(f"接收到標籤建議請求: diary_id={payload.diary_id}")
     return {"tags": ["#旅行", "#工作", f"#{payload.diary_id}相關"]}
 
-@app.get("/api/recap", response_model=RecapResponse, tags=["回顧功能"])
-async def generate_recap():
-    """
-    生成回顧輯，包含不同主題的摘要和相關筆記。
-    """
-    # --- 實際的回顧輯生成邏輯會在這裡 ---
-    # 例如：
-    # recap_data = await create_recap_collection()
-    # return {"recaps": recap_data}
-    print("接收到回顧輯生成請求")
-    mock_recaps = [
-        RecapItem(
-            hashtag="#旅行",
-            summary="關於最近幾次旅行的精彩回顧與體驗總結。",
-            notes=[
-                RecapNoteItem(note_id="trip001", title="京都五日遊"),
-                RecapNoteItem(note_id="trip002", title="宜蘭溫泉之旅"),
-            ]
-        ),
-        RecapItem(
-            hashtag="#工作",
-            summary="本月工作重點事項與專案進度回顧。",
-            notes=[
-                RecapNoteItem(note_id="proj001", title="Q3 專案規劃"),
-                RecapNoteItem(note_id="task005", title="客戶會議記錄"),
-            ]
-        )
-    ]
-    return {"recaps": mock_recaps}
 
-@app.post("/api/notify", response_model=NotifyResponse, tags=["通知與分析"])
-async def check_notifications():
+@app.get("/api/notify/{user_id}", tags=["通知與分析"])
+async def check_notifications(user_id: str):
     """
     進行情緒偵測並決定是否需要通知用戶。
     """
-    # --- 實際的情緒偵測與通知判斷邏輯會在這裡 ---
-    # 例如：
-    # notification_status = await analyze_user_mood_and_activity()
-    # return notification_status
-    print("接收到情緒偵測請求")
-    # 模擬回應
-    return NotifyResponse(
-        should_notify=True,
-        reason=["negative_mood_trend", "inactivity"],
-        mood_analysis=MoodAnalysis(
-            mood_trend="negative",
-            mood_scores=[0.2, 0.3, 0.1, 0.15]
-        ),
-        last_note_days_ago=10
-    )
+    notify = await mistral.generate_notify(database, user_id, openai_client)
+    print(f"接收到通知檢查請求: {notify}")
+    return notify
 
 # 若要在本地運行此應用程式，可以使用 uvicorn：
 # uvicorn main:app --reload
