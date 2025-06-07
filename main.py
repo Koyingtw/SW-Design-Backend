@@ -582,6 +582,12 @@ async def check_notifications(user_id: str):
     print(f"接收到通知檢查請求: {notify}")
     return notify
 
+@app.get("/api/link/{user_id}/{note_id}", tags=["連結功能"])
+async def get_note_link(user_id: str, note_id: str):
+    result = await mistral.get_event_link_from_note(database, user_id, note_id, openai_client)
+    print(result)
+    return result
+
 # 若要在本地運行此應用程式，可以使用 uvicorn：
 # uvicorn main:app --reload
 # (假設此檔案名為 main.py)

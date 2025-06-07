@@ -4,6 +4,7 @@ from openai import OpenAI
 import time
 import requests
 import db
+import json
 
 async def generate_summary_from_note(client, user_id: str, note_id: str, custom_prompt: str, openai_client) -> str:
     """
@@ -51,7 +52,7 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
     else:
         user_prompt = f"{base_prompt}\n\n日記內容：\n{note_content}"
     
-    model = "gpt-4o"
+    model = "gpt-4.1"
     
     try:
         response = openai_client.chat.completions.create(
@@ -61,7 +62,6 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.4,  # 適中的創造性
-            max_tokens=300,   # 根據需要調整
             top_p=0.9,       # 提高輸出品質
         )
         
@@ -113,7 +113,7 @@ async def generate_hashtag_from_note(client, user_id: str, note_id: str, openai_
 
 請直接輸出 hashtag，格式：hashtag1,hashtag2,hashtag3"""
 
-    model = "gpt-4o"
+    model = "gpt-4.1"
     
     try:
         response = openai_client.chat.completions.create(
@@ -219,7 +219,7 @@ async def generate_personalized_notification(openai_client, note_contents):
     
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o",  # 或使用 "gpt-4" 
+            model="gpt-4.1",  # 或使用 "gpt-4" 
             messages=[
                 {
                     "role": "system", 
@@ -241,6 +241,102 @@ async def generate_personalized_notification(openai_client, note_contents):
         print(f"生成通知時發生錯誤: {e}")
         # 返回默認通知訊息
         return "今天也記錄一下你的生活故事吧！每一天都值得被記住 ✨"
+    
+async def get_event_link_from_note(client, user_id: str, note_id: str, openai_client) -> str:
+    """
+    生成日記連結的函數
+    
+    Args:
+        client: 資料庫客戶端
+        user_id: 用戶ID
+        note_id: 日記ID
+        openai_client: OpenAI 客戶端
+    
+    Returns:
+        str: 生成的摘要
+    """
+    
+    # 獲取日記內容
+    note_content_all = await db.get_content_from_note_id(client, user_id, note_id)
+    note_content = ""
+    for content in note_content_all['items']:
+        if content['type'] == 'text':
+            note_content += content['text']
+    
+    print(f"日記內容：{note_content}")
+    
+    # 優化的 system prompt
+    system_prompt = """你是一位專業的行程提取助理。你的任務是從使用者提供的日記文本中，精確地提取出所有包含具體日期的待辦事項或活動。
+
+你需要嚴格遵守以下規則：
+
+1.  **輸出格式**：最終結果必須是一個 JSON 格式的字串。這個 JSON 是一個包含多個物件的陣列 (array)。如果沒有找到任何事件，請回傳一個空的陣列 `[]`。
+2.  **物件結構**：陣列中的每個物件都必須包含兩個鍵 (key)：
+    *   time: 字串格式，必須為 "YYYYMMDD"。
+    *   event: 字串格式，簡潔地描述事件內容。
+3.  **日期處理**：
+    *   你必須根據今天日期（會由使用者提供）來解析相對日期。例如：「明天」、「後天」、「下週三」。
+    *   將所有解析出的日期轉換為 "YYYYMMDD" 格式。例如，「6月10日」或「6/10」應轉換為 "20250610"。
+4.  **事件內容**：
+    *   事件描述應簡潔明瞭，提取核心動作與主題。例如「下午要去實驗室跟教授 meeting 討論專題進度」，應簡化為「與教授 meeting 討論專題」。
+    *   忽略日記中的心情、天氣、個人感想等與具體行程無關的內容。
+5.  **回傳內容**：不要添加任何解釋、前言或結語，直接回傳 JSON 字串。
+
+### 範例
+
+**範例 1：**
+*   今天日期: 20250607
+*   日記內容: 今天終於把作業寫完了，好累。對了，提醒自己，6/10 要考計算機結構，千萬不能忘記。
+*   輸出:
+    [{"time": "20250610", "event": "考計算機結構"}]
+
+**範例 2：**
+*   今天日期: 20250607
+*   日記內容: 今天天氣真好，跟朋友去看了場電影。明天要跟同學約在交大實驗室，準備下週一的 SC 團隊練習，然後下週三下午專題要 demo。
+*   輸出:
+    [{"time": "20250608", "event": "跟同學約在交大實驗室"}, {"time": "20250609", "event": "SC 團隊練習"}, {"time": "20250611", "event": "專題 demo"}]
+
+**範例 3：**
+*   今天日期: 20250607
+*   日記內容:今天都在耍廢，一事無成，明天要努力了。
+*   輸出:
+    []
+    """
+
+    # 構建 user prompt
+    user_prompt = f"""
+    今天的日期是 {note_id}。
+
+    請從以下日記內容中提取行程：
+
+    ---日記內容開始---
+    {note_content}
+    ---日記內容結束---
+    """
+    
+    model = "gpt-4.1"
+    
+    try:
+        response = openai_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2,
+            top_p=0.2,
+        )
+        
+        result = response.choices[0].message.content.strip()
+        result = json.loads(result)  # 解析 JSON 字符串
+        print(f"生成的摘要：{result}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"生成摘要時發生錯誤: {e}")
+        # 返回簡單的默認摘要
+        return "無法生成摘要，請稍後再試。"
 
 def main():
     # 設定 API 金鑰
@@ -253,7 +349,7 @@ def main():
     
     # 定義要使用的模型
     # model = "mistral-large-latest"
-    model="gpt-4o"
+    model="gpt-4.1"
     
     # 輸入語音轉文字結果，並提供指令要求模型進行修正
     user_input = """
