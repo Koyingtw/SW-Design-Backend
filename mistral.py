@@ -21,27 +21,49 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
         str: 生成的摘要
     """
     
-    # 獲取日記內容
-    note_content_all = await db.get_content_from_note_id(client, user_id, note_id)
-    note_content = ""
-    for content in note_content_all['items']:
-        if content['type'] == 'text':
-            note_content += content['text']
+    note_id_list = note_id.split(',')
+        
     
-    print(f"日記內容：{note_content}")
+    # 獲取日記內容
+    note_content = ""
     
     # 優化的 system prompt
-    system_prompt = """你是一個專業的日記摘要助手，擅長從個人日記中提取核心信息並生成簡潔有意義的摘要。
+    if len(note_id_list) == 1:
+        note_id = note_id_list[0]
+        system_prompt = """你是一個專業的日記摘要助手，擅長從個人日記中提取核心信息並生成簡潔有意義的摘要。
 
-你的任務是根據用戶的日記內容生成摘要，需要：
-1. 保留日記的核心信息和重要細節
-2. 維持原文的情感色彩和語調
-3. 結構清晰，邏輯順暢
-4. 使用自然流暢的繁體中文表達
-5. 避免過度解釋或添加個人觀點
-6. 摘要長度適中（通常為原文的 1/3 到 1/2）
+    你的任務是根據用戶的日記內容生成摘要，需要：
+    1. 保留日記的核心信息和重要細節
+    2. 維持原文的情感色彩和語調
+    3. 結構清晰，邏輯順暢
+    4. 使用自然流暢的繁體中文表達，且不要包含摘要本身的其他文字
+    5. 避免過度解釋或添加個人觀點
+    6. 摘要長度適中（通常為原文的 1/3 到 1/2）
 
-根據用戶的特殊需求調整摘要重點和風格。"""
+    根據用戶的特殊需求調整摘要重點和風格。"""
+        note_content_all = await db.get_content_from_note_id(client, user_id, note_id)
+        for content in note_content_all['items']:
+            if content['type'] == 'text':
+                note_content += content['text']
+        
+        print(f"日記內容：{note_content}")
+    else:
+        system_prompt = """你是一位精煉的敘事摘要專家。
+
+你的任務是將多篇日記融合成一個「單一、流暢的段落」，捕捉這段時間的核心精華。
+
+**絕對規則：**
+1.  **單一段落**：最終輸出只能是一個段落，禁止使用任何條列式清單。
+2.  **長度限制**：整個段落的長度嚴格控制在 3 到 4 個句子以內。
+3.  **聚焦核心**：從所有日記中，找出 1 至 2 個最重要的主題或事件來敘述，並點出期間的整體感受或轉變。拋棄所有次要細節。
+4.  **直接輸出**：不要添加任何前言或標題，直接生成該段落。"""
+        for note_id in note_id_list:
+            note_content += f"{note_id}:\n"
+            note_content_all = await db.get_content_from_note_id(client, user_id, note_id)
+            for content in note_content_all['items']:
+                if content['type'] == 'text':
+                    note_content += f"{note_id}:\n{content['text']}\n"
+            note_content += "\n"  # 每篇日記之間添加空行
 
     # 構建 user prompt
     base_prompt = "請為以下日記內容生成摘要："
