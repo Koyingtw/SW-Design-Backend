@@ -154,7 +154,6 @@ async def save_image_to_mongodb(
         print(f"存儲音訊檔案到 MongoDB 時發生錯誤: {e}")
         raise
 
-
 # 儲存影片檔案到 MongoDB
 async def save_video_to_mongodb(
     client, 
@@ -366,6 +365,45 @@ async def add_note_id_to_note_list(client, user_id: str, note_id: str, hashtags:
             "success": False,
             "error": str(e)
         }
+
+async def delete_note_from_note_list(client, user_id: str, note_id: str):
+    """
+    從指定使用者的 note_list 集合中刪除指定的 note_id
+    
+    參數:
+    - client: MongoDB 客戶端連接
+    - user_id: 使用者 ID
+    - note_id: 要刪除的筆記 ID
+    
+    返回:
+    - 操作結果
+    """
+    try:
+        # 獲取使用者的資料庫
+        db = client[user_id]
+        collection = db['note_list']
+        
+        # 刪除指定 note_id 的文檔
+        result = collection.delete_one({"note_id": note_id})
+        
+        collection = db[note_id]
+        collection.drop()
+        
+        if result.deleted_count > 0:
+            print(f"成功刪除 note_id: {note_id} 從 note_list")
+            return {"success": True, "note_id": note_id}
+        else:
+            print(f"找不到 note_id: {note_id} 在 note_list 中")
+            return {"success": False, "error": "Note not found", "note_id": note_id}
+        
+            
+    except Exception as e:
+        print(f"刪除筆記時發生錯誤: {e}")
+        return {"success": False, "error": str(e), "note_id": note_id}
+            
+    except Exception as e:
+        print(f"刪除筆記時發生錯誤: {e}")
+        return {"success": False, "error": str(e), "note_id": note_id}
 
 async def get_sorted_note_list(client, user_id: str) -> list[str]:
     """

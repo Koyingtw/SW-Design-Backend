@@ -244,11 +244,33 @@ async def create_diary(
     """
     print(f"接收到創建日記請求: user_id={user_id}, note_id={note_id}")
     
-    # 清除舊的日記條目
     await db.add_note_id_to_note_list(database, user_id, note_id)
     
     # 返回成功回應
     return JSONResponse(content={"message": "日記創建成功"})
+
+@app.post("/api/delete", status_code=200, tags=["刪除日記"])
+async def delete_diary(
+    user_id: str = Form(...),
+    note_id: str = Form(...),
+):
+    """
+    刪除指定的日記條目。
+    
+    - **user_id**: 使用者的唯一識別碼。
+    - **note_id**: 筆記的唯一識別碼。
+    """
+    print(f"接收到刪除日記請求: user_id={user_id}, note_id={note_id}")
+    
+    # 刪除指定的日記條目
+    try:
+        await db.delete_note_from_note_list(database, user_id, note_id)
+    
+        # 返回成功回應
+        return JSONResponse(content={"message": "日記刪除成功"})
+    except Exception as e:
+        print(f"刪除日記時發生錯誤: {e}")
+        raise HTTPException(status_code=500, detail=f"刪除日記時發生錯誤: {str(e)}")
 
 @app.get("/api/note_list/{user_id}", tags=["獲得筆記列表"])
 async def get_user_note_list_simple(user_id: str):
