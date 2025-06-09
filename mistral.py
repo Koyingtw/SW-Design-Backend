@@ -44,7 +44,7 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
         note_content_all = await db.get_content_from_note_id(client, user_id, note_id)
         for content in note_content_all['items']:
             if content['type'] == 'text':
-                note_content += content['text']
+                note_content += content['content']
         
         print(f"日記內容：{note_content}")
     else:
@@ -62,7 +62,7 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
             note_content_all = await db.get_content_from_note_id(client, user_id, note_id)
             for content in note_content_all['items']:
                 if content['type'] == 'text':
-                    note_content += f"{note_id}:\n{content['text']}\n"
+                    note_content += f"{note_id}:\n{content['content']}\n"
             note_content += "\n"  # 每篇日記之間添加空行
 
     # 構建 user prompt
@@ -103,7 +103,7 @@ async def generate_hashtag_from_note(client, user_id: str, note_id: str, openai_
     note_content = ""
     for content in note_content_all['items']:
         if content['type'] == 'text':
-            note_content += content['text'] + "\n"
+            note_content += content['content'] + "\n"
     
     print(f"日記內容：{note_content}")
     
@@ -199,7 +199,7 @@ async def generate_notify(client, user_id, openai_client):
         note_content = ""
         for content in note_data['items']:
             if content['type'] == 'text':
-                note_content += content['text']
+                note_content += content['content']
         
         # 假設 note_data 中包含日期信息，你需要根據實際數據結構調整
         # 這裡需要你確認如何獲取日期，可能的方式：
@@ -282,7 +282,7 @@ async def get_event_link_from_note(client, user_id: str, note_id: str, openai_cl
     note_content = ""
     for content in note_content_all['items']:
         if content['type'] == 'text':
-            note_content += content['text']
+            note_content += content['content']
     
     print(f"日記內容：{note_content}")
     
