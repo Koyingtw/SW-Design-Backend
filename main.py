@@ -499,7 +499,7 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
         
         # 語言代碼轉換 (如果需要)
         language_mapping = {
-            "zh-TW": "zh-TW",
+            "zh": "zh",
             "en": "en",
             "ja": "ja",
             "ko": "ko",
