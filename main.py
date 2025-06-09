@@ -461,7 +461,7 @@ async def get_summary(
 #         )
 
 @app.post("/api/audio/transcribe", response_model=TranscribeResponse, tags=["語音轉文字"])
-async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh")):
+async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh-TW")):
     """
     接收音檔並使用 OpenAI Whisper API 將其轉換為文字。
     
@@ -499,7 +499,7 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
         
         # 語言代碼轉換 (如果需要)
         language_mapping = {
-            "zh": "zh",
+            "zh-TW": "zh-TW",
             "en": "en",
             "ja": "ja",
             "ko": "ko",
@@ -510,7 +510,7 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
         
         # 呼叫 OpenAI Whisper API
         response = openai_client.audio.transcriptions.create(
-            model="whisper-1",
+            model="gpt-4o-transcribe",
             file=audio_file,
             language=whisper_language,  # 指定語言可以提高準確性
             response_format="text",     # 直接返回文字，也可以選擇 "json", "srt", "verbose_json", "vtt"
