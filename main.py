@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, status
 from fastapi.responses import Response, JSONResponse
 
 from pydantic import BaseModel, Field
@@ -13,6 +13,7 @@ from openai import OpenAI
 
 import mistral
 import db
+import security
 
 mistral_key = os.getenv("MISTRAL_API_KEY")
 openai_api_key = os.environ.get('OPENAI_API_KEY')
@@ -608,6 +609,65 @@ async def get_note_link(user_id: str, note_id: str):
     result = await mistral.get_event_link_from_note(database, user_id, note_id, openai_client)
     print(result)
     return result
+
+@app.post("/api/register", status_code=status.HTTP_201_CREATED)
+async def register_user(
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    db = database['auth_db']
+    users_collection = db['users']
+    
+    # 檢查使用者是否已存在
+    existing_user = users_collection.find_one({"username": username})
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )   
+    
+    # 雜湊密碼
+    hashed_password = security.get_password_hash(password)
+    
+    # 建立使用者資料
+    user_data = dict()
+    user_data["username"] = username
+    user_data["hashed_password"] = hashed_password
+
+    # 存入資料庫
+    users_collection.insert_one(user_data)
+    
+    return {"message": "User created successfully", "username": username}
+
+@app.post("/api/login")
+async def login_user(
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    print(f"接收到登入請求: username={username}, password={password}")
+    
+    db = database['auth_db']
+    users_collection = db['users']
+    
+    # 從資料庫尋找使用者
+    db_user = users_collection.find_one({"username": username})
+    
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incorrect username or password"
+        )
+        
+    # 驗證密碼
+    if not security.verify_password(password, db_user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incorrect username or password"
+        )
+        
+    # 在這個簡單範例中，我們只返回成功訊息
+    # 在實際應用中，這裡會生成 JWT (JSON Web Token)[2]
+    return {"message": "Login successful", "username": username}
 
 # 若要在本地運行此應用程式，可以使用 uvicorn：
 # uvicorn main:app --reload
