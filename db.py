@@ -171,7 +171,7 @@ async def save_video_to_mongodb(
         db, _ = get_db_and_collection(client, user_id, note_id)
         
         # 使用 GridFS 存儲影片檔案
-        fs = gridfs.GridFS(db, collection="video_files")
+        fs = gridfs.GridFS(db, collection=note_id)
         
         # 準備檔案元資料
         metadata = {
