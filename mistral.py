@@ -125,7 +125,7 @@ async def generate_hashtag_from_note(client, user_id: str, note_id: str, openai_
 3. 不要包含 # 符號
 4. 只輸出 hashtag，以逗號分隔
 5. 不要輸出任何解釋或額外文字
-6. 避免過於籠統的詞彙，要具體且有意義"""
+6. 請使用籠統的詞彙，只要名詞關鍵字就好，不用包含形容詞或動詞，讓類似內容的日記會有一樣的 hashtag"""
 
     # 優化的 user prompt
     user_prompt = f"""請分析以下日記內容，生成 3-6 個相關的 hashtag：
