@@ -510,7 +510,7 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
         
         # 呼叫 OpenAI Whisper API
         response = openai_client.audio.transcriptions.create(
-            model="gpt-4o-transcribe",
+            model="whisper-1",
             file=audio_file,
             language=whisper_language,  # 指定語言可以提高準確性
             response_format="text",     # 直接返回文字，也可以選擇 "json", "srt", "verbose_json", "vtt"
