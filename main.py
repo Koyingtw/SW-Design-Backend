@@ -461,7 +461,7 @@ async def get_summary(
 #         )
 
 @app.post("/api/audio/transcribe", response_model=TranscribeResponse, tags=["語音轉文字"])
-async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh-TW")):
+async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh")):
     """
     接收音檔並使用 OpenAI Whisper API 將其轉換為文字。
     
