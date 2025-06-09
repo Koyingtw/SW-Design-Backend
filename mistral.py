@@ -323,6 +323,14 @@ async def get_event_link_from_note(client, user_id: str, note_id: str, openai_cl
 *   日記內容:今天都在耍廢，一事無成，明天要努力了。
 *   輸出:
     []
+    
+**範例 4：**
+*   今天日期: 20250607
+*   日記內容:昨天考了一場數學考試
+*   輸出:
+    [{"time": "20250606", "event": "考數學考試"}]
+    
+
     """
 
     # 構建 user prompt

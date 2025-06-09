@@ -22,8 +22,7 @@ mistral_client = mistral.Mistral(api_key=mistral_key)
 openai_client = OpenAI(api_key=openai_api_key)
 
 app = FastAPI(
-    title="我的筆記 API",
-    description="提供筆記相關功能的 API 服務",
+    title="SW-Design API",
     version="1.0.0",
 )
 
@@ -150,7 +149,7 @@ async def upload_diary_entry_handler(
 
 # --- API 端點 ---
 
-@app.post("/api/upload", status_code=200, tags=["日記管理"])
+@app.post("/api/upload", status_code=200, tags=["上傳日記"])
 async def upload_diary_entry(
     user_id: str = Form(...),
     note_id: str = Form(...),
@@ -460,8 +459,8 @@ async def get_summary(
 #             detail=f"處理請求時發生錯誤: {str(e)}"
 #         )
 
-@app.post("/api/audio/transcribe", response_model=TranscribeResponse, tags=["語音服務"])
-async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh")):
+@app.post("/api/audio/transcribe", response_model=TranscribeResponse, tags=["語音轉文字"])
+async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("zh-TW")):
     """
     接收音檔並使用 OpenAI Whisper API 將其轉換為文字。
     
@@ -499,7 +498,7 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("
         
         # 語言代碼轉換 (如果需要)
         language_mapping = {
-            "zh": "zh",
+            "zh-TW": "zh-TW",
             "en": "en",
             "ja": "ja",
             "ko": "ko",
@@ -582,17 +581,17 @@ async def search_notes(user_id: str, query: str):
         raise HTTPException(status_code=500, detail=f"搜尋時發生錯誤: {str(e)}")
 
 
-@app.post("/api/tag/suggest", response_model=TagSuggestResponse, tags=["標籤功能"])
-async def suggest_tags(payload: TagSuggestRequest):
-    """
-    根據日記 ID 建議相關標籤。
-    """
-    # --- 實際的標籤建議邏輯會在這裡 ---
-    # 例如：
-    # suggested_tags = await generate_tags_for_diary(payload.diary_id)
-    # return {"tags": suggested_tags}
-    print(f"接收到標籤建議請求: diary_id={payload.diary_id}")
-    return {"tags": ["#旅行", "#工作", f"#{payload.diary_id}相關"]}
+# @app.post("/api/tag/suggest", response_model=TagSuggestResponse, tags=["標籤功能"])
+# async def suggest_tags(payload: TagSuggestRequest):
+#     """
+#     根據日記 ID 建議相關標籤。
+#     """
+#     # --- 實際的標籤建議邏輯會在這裡 ---
+#     # 例如：
+#     # suggested_tags = await generate_tags_for_diary(payload.diary_id)
+#     # return {"tags": suggested_tags}
+#     print(f"接收到標籤建議請求: diary_id={payload.diary_id}")
+#     return {"tags": ["#旅行", "#工作", f"#{payload.diary_id}相關"]}
 
 
 @app.get("/api/notify/{user_id}", tags=["通知與分析"])
