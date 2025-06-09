@@ -70,9 +70,8 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
     
     # 如果有自定義需求，加入到 prompt 中
     if custom_prompt and custom_prompt.strip():
-        user_prompt = f"{base_prompt}\n\n特殊需求：{custom_prompt}\n\n日記內容：\n{note_content}"
-    else:
-        user_prompt = f"{base_prompt}\n\n日記內容：\n{note_content}"
+        system_prompt = custom_prompt
+    user_prompt = f"{base_prompt}\n\n日記內容：\n{note_content}"
     
     model = "gpt-4.1"
     

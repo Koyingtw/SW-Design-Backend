@@ -468,7 +468,7 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
             
             # 添加文字內容（如果有）
             if "text" in doc:
-                item["text"] = doc["text"]
+                item["content"] = doc["text"]
             
             # 處理音訊檔案
             if "audio_file_id" in doc and doc["type"] == "audio":
@@ -525,13 +525,13 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
                     file_metadata = files_collection.find_one({"_id": ObjectId(audio_file_id)})
                     
                     if file_metadata:
-                        item["audio_data"] = base64.b64encode(audio_data).decode('utf-8')  # 轉換為 base64 字串以便 JSON 序列化
+                        item["content"] = base64.b64encode(audio_data).decode('utf-8')  # 轉換為 base64 字串以便 JSON 序列化
                         item["audio_filename"] = file_metadata.get("filename", "audio.wav")
                         item["audio_content_type"] = file_metadata.get("contentType", "audio/wav")
                         item["audio_size"] = len(audio_data)
                     else:
                         # 如果找不到元資料，仍然返回數據但使用默認值
-                        item["audio_data"] = base64.b64encode(audio_data).decode('utf-8')
+                        item["content"] = base64.b64encode(audio_data).decode('utf-8')
                         item["audio_filename"] = "audio.wav"
                         item["audio_content_type"] = "audio/wav"
                         item["audio_size"] = len(audio_data)
@@ -589,13 +589,13 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
                     files_collection = db[f"{note_id}.files"]
                     file_metadata = files_collection.find_one({"_id": ObjectId(image_file_id)})
                     if file_metadata:
-                        item["image_data"] = base64.b64encode(image_data).decode('utf-8')
+                        item["content"] = base64.b64encode(image_data).decode('utf-8')
                         item["image_filename"] = file_metadata.get("filename", "image.jpg")
                         item["image_content_type"] = file_metadata.get("contentType", "image/jpeg")
                         item["image_size"] = len(image_data)
                     else:
                         # 如果找不到元資料，仍然返回數據但使用默認值
-                        item["image_data"] = base64.b64encode(image_data).decode('utf-8')
+                        item["content"] = base64.b64encode(image_data).decode('utf-8')
                         item["image_filename"] = "image.jpg"
                         item["image_content_type"] = "image/jpeg"
                         item["image_size"] = len(image_data)
@@ -655,13 +655,13 @@ async def get_content_from_note_id(client, user_id: str, note_id: str) -> dict[s
                     file_metadata = files_collection.find_one({"_id": ObjectId(video_file_id)})
                     
                     if file_metadata:
-                        item["video_data"] = base64.b64encode(video_data).decode('utf-8')  # 轉換為 base64 字串以便 JSON 序列化
+                        item["content"] = base64.b64encode(video_data).decode('utf-8')  # 轉換為 base64 字串以便 JSON 序列化
                         item["video_filename"] = file_metadata.get("filename", "video.mp4")
                         item["video_content_type"] = file_metadata.get("contentType", "video/mp4")
                         item["video_size"] = len(video_data)
                     else:
                         # 如果找不到元資料，仍然返回數據但使用默認值
-                        item["video_data"] = base64.b64encode(video_data).decode('utf-8')
+                        item["content"] = base64.b64encode(video_data).decode('utf-8')
                         item["video_filename"] = "video.mp4"
                         item["video_content_type"] = "video/mp4"
                         item["video_size"] = len(video_data)
