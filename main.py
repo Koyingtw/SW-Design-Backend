@@ -610,7 +610,7 @@ async def get_note_link(user_id: str, note_id: str):
     print(result)
     return result
 
-@app.post("/api/register", status_code=status.HTTP_201_CREATED)
+@app.post("/api/register", status_code=status.HTTP_201_CREATED, tags=["登入功能"])
 async def register_user(
     username: str = Form(...),
     password: str = Form(...),
@@ -639,7 +639,7 @@ async def register_user(
     
     return {"message": "User created successfully", "username": username}
 
-@app.post("/api/login")
+@app.post("/api/login", tags=["登入功能"])
 async def login_user(
     username: str = Form(...),
     password: str = Form(...),
