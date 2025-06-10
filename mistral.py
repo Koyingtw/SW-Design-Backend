@@ -66,7 +66,7 @@ async def generate_summary_from_note(client, user_id: str, note_id: str, custom_
             note_content += "\n"  # 每篇日記之間添加空行
 
     # 構建 user prompt
-    base_prompt = "請為以下日記內容生成摘要："
+    base_prompt = "請為以下日記內容生成摘要，不要輸出換行："
     
     # 如果有自定義需求，加入到 prompt 中
     if custom_prompt and custom_prompt.strip():
